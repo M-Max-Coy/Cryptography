@@ -4,7 +4,7 @@ use crate::crypto::math_helper;
 Finds the inverse of a byte by mapping the byte to its corresponding element in GF(2^8)
 and finding the inverse. 0 is mapped to 0.
 */
-pub fn inv(byte: u8) -> u8 {
+fn inv(byte: u8) -> u8 {
     if byte == 0 {
         return 0;
     }
@@ -22,7 +22,7 @@ pub fn inv(byte: u8) -> u8 {
 /*
 Scales and shifts input byte with formula A(byte)+b
 */
-pub fn aff(byte: u8) -> u8 {
+fn aff(byte: u8) -> u8 {
     let mut res: u8 = 0;
 
     let A: [u8; 8] = [0b11110001, 0b11100011, 0b11000111, 0b10001111, 0b00011111, 0b00111110, 0b01111100, 0b11111000];
@@ -45,7 +45,7 @@ pub fn aff(byte: u8) -> u8 {
 /*
 Inverse of aff function
 */
-pub fn inv_aff(byte: u8) -> u8 {
+fn inv_aff(byte: u8) -> u8 {
     let b: u8 = 0b01100011;
 
     let byte2: u8 = byte ^ b;
