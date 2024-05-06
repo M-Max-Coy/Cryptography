@@ -4,7 +4,7 @@ use crate::crypto::math_helper;
 Finds the inverse of a byte by mapping the byte to its corresponding element in GF(2^8)
 and finding the inverse. 0 is mapped to 0.
 */
-fn inv(byte: u8) -> u8 {
+pub fn inv(byte: u8) -> u8 {
     if byte == 0 {
         return 0;
     }
@@ -22,7 +22,7 @@ fn inv(byte: u8) -> u8 {
 /*
 Scales and shifts input byte with formula A(byte)+b
 */
-fn aff(byte: u8) -> u8 {
+pub fn aff(byte: u8) -> u8 {
     let mut res: u8 = 0;
 
     let A: [u8; 8] = [0b11110001, 0b11100011, 0b11000111, 0b10001111, 0b00011111, 0b00111110, 0b01111100, 0b11111000];
@@ -43,12 +43,46 @@ fn aff(byte: u8) -> u8 {
 }
 
 /*
+Inverse of aff function
+*/
+pub fn inv_aff(byte: u8) -> u8 {
+    let b: u8 = 0b01100011;
+
+    let byte2: u8 = byte ^ b;
+
+    let mut res: u8 = 0;
+
+    let A: [u8; 8] = [0b01010010, 0b00101001, 0b10010100, 0b01001010, 0b00100101, 0b10010010, 0b01001001, 0b10100100];
+
+    for i in 0..8 {
+        let mut bit = 0;
+        for j in 0..8 {
+            bit ^= (A[i] >> j & 1) & (byte2 >> j & 1);
+        }
+        res ^= bit << (7-i)
+    }
+
+    return res;
+}
+
+/*
 Replaces all the bytes in the state array to scramble state array data
 */
 fn sub_bytes(state: &mut [[u8; 4]; 4]) {
     for i in 0..4 {
         for j in 0..4 {
             state[i][j] = aff(inv(state[i][j]));
+        }
+    }
+}
+
+/*
+Inverse of sub bytes
+*/
+fn inv_sub_bytes(state: &mut [[u8; 4]; 4]) {
+    for i in 0..4 {
+        for j in 0..4 {
+            state[i][j] = inv(inv_aff(state[i][j]));
         }
     }
 }
@@ -65,11 +99,20 @@ fn add_round_key(state: &mut [[u8; 4]; 4], key: [[u8; 4]; 4]) {
 }
 
 /*
-Shifts the bytes across columns in each row by a predetermined amount
+Scrambles state array by shifting rows across columns
 */
 fn shift_rows(state: &mut [[u8; 4]; 4]) {
     for i in 0..4 {
         state[i].rotate_left(i);
+    }
+}
+
+/*
+Inverse of shift rows
+*/
+fn inv_shift_rows(state: &mut [[u8; 4]; 4]) {
+    for i in 0..4 {
+        state[i].rotate_right(i);
     }
 }
 
@@ -89,6 +132,37 @@ fn mix_columns(state: &mut [[u8; 4]; 4]) {
         [0b00000001, 0b00000010, 0b00000011, 0b00000001],
         [0b00000001, 0b00000001, 0b00000010, 0b00000011],
         [0b00000011, 0b00000001, 0b00000001, 0b00000010]
+    ];
+
+    let copy = state.clone();
+
+    for i in 0..4 {
+        for j in 0..4 {
+            let mut sum: u8 = 0;
+            for k in 0..4 {
+                sum ^= math_helper::byte_multiply(&M[i][k],&copy[k][j]);
+            }
+            state[i][j] = sum;
+        }
+    }
+}
+
+/*
+Inverse of mix columns
+*/
+fn inv_mix_columns(state: &mut [[u8; 4]; 4]) {
+    // let M: [[u8; 4]; 4] = [
+    //     [0b01000000, 0b11000000, 0b10000000, 0b10000000],
+    //     [0b10000000, 0b01000000, 0b11000000, 0b10000000],
+    //     [0b10000000, 0b10000000, 0b01000000, 0b11000000],
+    //     [0b11000000, 0b10000000, 0b10000000, 0b01000000]
+    // ];
+
+    let M: [[u8; 4]; 4] = [
+        [0b00001110, 0b00001011, 0b00001101, 0b00001001],
+        [0b00001001, 0b00001110, 0b00001011, 0b00001101],
+        [0b00001101, 0b00001001, 0b00001110, 0b00001011],
+        [0b00001011, 0b00001101, 0b00001001, 0b00001110]
     ];
 
     let copy = state.clone();
@@ -249,17 +323,9 @@ pub fn AES_encrypt(message: [[u8; 4]; 4], key: [[u8; 4]; 4]) -> [[u8; 4]; 4] {
         // Shift Rows
         shift_rows(&mut state);
 
-        if r == 2 {
-            println!("{:?}", state);
-        }
-
         // Mix Columns
         if r != 10 {
             mix_columns(&mut state);
-        }
-
-        if r == 2 {
-            println!("{:?}", state);
         }
 
         // Add Round Key
@@ -269,8 +335,31 @@ pub fn AES_encrypt(message: [[u8; 4]; 4], key: [[u8; 4]; 4]) -> [[u8; 4]; 4] {
     return state;
 }
 
-pub fn AES_decrypt() -> [[u8; 4]; 4] {
-    unimplemented!();
+pub fn AES_decrypt(ciphertext: [[u8; 4]; 4], key: [[u8; 4]; 4]) -> [[u8; 4]; 4] {
+    let schedule = key_schedule(key);
+
+    let mut state = ciphertext;
+
+    // Add initial key
+    add_round_key(&mut state,schedule[10]);
+
+    for r in (0..=9).rev() {
+        // Inv Shift Rows
+        inv_sub_bytes(&mut state);
+
+        // Inv Sub Bytes
+        inv_shift_rows(&mut state);
+
+        // Add Round Key
+        add_round_key(&mut state,schedule[r]);
+
+        // Inv Mix Columns
+        if r != 0 {
+            inv_mix_columns(&mut state);
+        }
+    }
+
+    return state;
 }
 
 pub fn AES_main() {
@@ -306,6 +395,27 @@ mod tests {
             [0x84, 0xbe, 0xaa, 0x92],
             [0xc4, 0xde, 0xe4, 0xd5],
             [0xdd, 0xc1, 0x98, 0x0d]
+        ];
+        
+        assert_eq!(state,res);
+    }
+
+    #[test]
+    fn test_inv_sub_bytes() {
+        let mut state: [[u8; 4]; 4] = [
+            [0x63, 0xad, 0xf1, 0x04],
+            [0x84, 0xbe, 0xaa, 0x92],
+            [0xc4, 0xde, 0xe4, 0xd5],
+            [0xdd, 0xc1, 0x98, 0x0d]
+        ];
+
+        inv_sub_bytes(&mut state);
+
+        let res: [[u8; 4]; 4] = [
+            [0x00, 0x18, 0x2b, 0x30],
+            [0x4f, 0x5a, 0x62, 0x74],
+            [0x88, 0x9c, 0xae, 0xb5],
+            [0xc9, 0xdd, 0xe2, 0xf3]
         ];
         
         assert_eq!(state,res);
